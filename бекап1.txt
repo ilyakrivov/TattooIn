@@ -1,14 +1,13 @@
 import logging
-import os
-import json
-import asyncio
-import gspread
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+import asyncio
+import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from datetime import datetime
 
 # Настройка логирования
 logging.basicConfig(
@@ -18,13 +17,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Конфигурация
-TOKEN = os.getenv("TOKEN")
-SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
+TOKEN = "8145217179:AAFj5N1gL6i405T9RTHih5NiHznMqOxLVMM"
+SPREADSHEET_ID = "1uC3WoJ2eUOsi_zQ5AohIpHZQtfhkWykqTjApx6Uzaic"
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 # Инициализация Google Sheets
 try:
-    creds_json = json.loads(os.getenv("GOOGLE_CREDENTIALS"))
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, ["https://www.googleapis.com/auth/spreadsheets"])
+    creds = ServiceAccountCredentials.from_json_keyfile_name("tattoo-income-bot-e446e5e6ab6d.json", SCOPES)
     client = gspread.authorize(creds)
     spreadsheet = client.open_by_key(SPREADSHEET_ID)
     sheet = spreadsheet.sheet1
@@ -38,14 +37,14 @@ dp = Dispatcher()
 
 # Клавиатуры
 start_kb = ReplyKeyboardMarkup(
-    keyboard=[
+    keyboard=[ 
         [KeyboardButton(text="Свой"), KeyboardButton(text="Студия")]
     ],
     resize_keyboard=True
 )
 
 category_kb = ReplyKeyboardMarkup(
-    keyboard=[
+    keyboard=[ 
         [KeyboardButton(text="Плёнка"), KeyboardButton(text="Набор")],
         [KeyboardButton(text="Клиент ухаживает сам")]
     ],
@@ -53,21 +52,21 @@ category_kb = ReplyKeyboardMarkup(
 )
 
 film_kb = ReplyKeyboardMarkup(
-    keyboard=[
+    keyboard=[ 
         [KeyboardButton(text="500"), KeyboardButton(text="1000"), KeyboardButton(text="1500")]
     ],
     resize_keyboard=True
 )
 
 kit_kb = ReplyKeyboardMarkup(
-    keyboard=[
+    keyboard=[ 
         [KeyboardButton(text="500"), KeyboardButton(text="1000")]
     ],
     resize_keyboard=True
 )
 
 restart_kb = ReplyKeyboardMarkup(
-    keyboard=[
+    keyboard=[ 
         [KeyboardButton(text="Новая запись")]
     ],
     resize_keyboard=True
@@ -91,9 +90,10 @@ COLUMNS = {
 async def update_sheet(user: str, column: int, value: str):
     """Обновляем или создаем запись мастера с суммированием"""
     try:
-        search_query = user.strip()
+        user = user.lower().strip()
+        search_query = f"@{user}"
 
-        # Попробуем найти ячейку с именем пользователя
+        # Попробуем найти ячейку с запросом
         cell = None
         try:
             cell = sheet.find(search_query)
@@ -150,11 +150,12 @@ async def process_category(message: types.Message, state: FSMContext):
     await state.update_data(category=message.text)
     
     if message.text == "Клиент ухаживает сам":
+        # Записываем 0 и завершаем процесс
         data = await state.get_data()
-        user = message.from_user.full_name  # Используем Имя вместо логина
+        user = message.from_user.username
         
         success1 = await update_sheet(user, COLUMNS[data['type']], data['amount'])
-        success2 = await update_sheet(user, COLUMNS["Плёнка"], "0")
+        success2 = await update_sheet(user, COLUMNS["Плёнка"], "0")  # Записываем 0 в плёнку
         
         if success1 and success2:
             await message.answer(
@@ -183,7 +184,7 @@ async def incorrect_category(message: types.Message):
 async def process_final(message: types.Message, state: FSMContext):
     try:
         data = await state.get_data()
-        user = message.from_user.full_name  # Используем Имя вместо логина
+        user = message.from_user.username
         
         success1 = await update_sheet(user, COLUMNS[data['type']], data['amount'])
         success2 = await update_sheet(user, COLUMNS[data['category']], message.text)
@@ -206,8 +207,8 @@ async def process_final(message: types.Message, state: FSMContext):
 
 @dp.message(F.text == "Новая запись")
 async def restart_process(message: types.Message, state: FSMContext):
-    await state.clear()
-    await start(message, state)
+    await state.clear()  # Очищаем состояние
+    await start(message, state)  # Перезапускаем процесс с начала
 
 @dp.message(Form.category_amount)
 async def incorrect_category_amount(message: types.Message):
